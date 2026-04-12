@@ -27,6 +27,7 @@ class PlayerWrapper: Identifiable {
 class PlayerManager: ObservableObject {
     @Published var playerWrapper: PlayerWrapper?
     @Published var errorMessage: String?
+    var settings: SettingsStore?
 
     private(set) var player: AVPlayer?
 
@@ -39,8 +40,8 @@ class PlayerManager: ObservableObject {
         cleanup()
 
         let headers = [
-            "Referer": "https://www.patreon.com/",
-            "Origin":  "https://www.patreon.com/"
+            "Referer": settings?.referer ?? "https://www.patreon.com/",
+            "Origin":  settings?.origin  ?? "https://www.patreon.com/"
         ]
         let asset = AVURLAsset(
             url: url,
@@ -171,6 +172,39 @@ struct EditItemSheet: View {
 }
 
 // ─────────────────────────────────────────────
+// MARK: SettingsSheet
+// ─────────────────────────────────────────────
+
+struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var settings: SettingsStore
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("HTTP headers") {
+                    TextField("Referer", text: $settings.referer)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    TextField("Origin", text: $settings.origin)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
 // MARK: StreamRow
 // ─────────────────────────────────────────────
 
@@ -216,6 +250,9 @@ struct StreamRow: View {
 struct ContentView: View {
     @StateObject private var playerManager = PlayerManager()
     @StateObject private var history       = HistoryStore()
+    
+    @StateObject private var settings    = SettingsStore()
+    @State private var showingSettings   = false
 
     @State private var urlText       = ""
     @State private var editingItem:  StreamItem? = nil
@@ -223,6 +260,23 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // ── Header Recent ──
+                HStack {
+                    Text("RECENT")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .kerning(0.5)
+                    Spacer()
+                    Button("SETTINGS") {
+                        showingSettings = true
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .kerning(0.5)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
 
                 // ── History list ──
                 if history.items.isEmpty {
@@ -266,6 +320,20 @@ struct ContentView: View {
                                     .tint(.orange)
                                 }
                         }
+                        
+                        // ── Hints row ──
+                        HStack {
+                            Label("swipe left to delete", systemImage: "arrow.left")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            Label("swipe right to edit", systemImage: "arrow.right")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                                .environment(\.layoutDirection, .rightToLeft)
+                        }
+                        .padding(.vertical, 0)
+                        .listRowSeparator(.hidden)   // hides the divider above the hints row
                     }
                     .listStyle(.plain)
                 }
@@ -321,6 +389,7 @@ struct ContentView: View {
 
         // ── Save to history on confirmed playback ──
         .onAppear {
+            playerManager.settings = settings
             playerManager.onPlaybackStarted = { url in
                 let item = StreamItem(
                     name:    urlText.isEmpty ? "Untitled stream" : "Stream",
@@ -336,6 +405,9 @@ struct ContentView: View {
             EditItemSheet(item: item) { updated in
                 history.update(updated)
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet(settings: settings)
         }
 
         // ── Error alert ──

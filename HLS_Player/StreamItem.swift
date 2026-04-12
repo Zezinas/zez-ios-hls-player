@@ -76,3 +76,18 @@ class HistoryStore: ObservableObject {
         items = decoded
     }
 }
+
+
+class SettingsStore: ObservableObject {
+    @Published var referer: String {
+        didSet { UserDefaults.standard.set(referer, forKey: "referer") }
+    }
+    @Published var origin: String {
+        didSet { UserDefaults.standard.set(origin, forKey: "origin") }
+    }
+
+    init() {
+        self.referer = UserDefaults.standard.string(forKey: "referer") ?? "https://www.patreon.com/"
+        self.origin  = UserDefaults.standard.string(forKey: "origin")  ?? "https://www.patreon.com/"
+    }
+}
