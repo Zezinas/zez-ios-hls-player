@@ -89,7 +89,7 @@ class PlayerManager: ObservableObject {
         player        = nil
         playerWrapper = nil
     }
-
+    
     func generateThumbnail(for itemID: UUID, into history: HistoryStore) {
         guard let currentItem = player?.currentItem else { return }
 
@@ -296,7 +296,7 @@ struct StreamRow: View {
 struct ContentView: View {
     @StateObject private var playerManager = PlayerManager()
     @StateObject private var history       = HistoryStore()
-
+    
     @StateObject private var settings    = SettingsStore()
     @State private var showingSettings   = false
 
@@ -366,7 +366,7 @@ struct ContentView: View {
                                     .tint(.orange)
                                 }
                         }
-
+                        
                         // ── Hints row ──
                         HStack {
                             Label("swipe left to delete", systemImage: "arrow.left")
@@ -383,7 +383,7 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                 }
-
+                
                 // ── URL bar (Safari-style, pinned top) ──
                 HStack(spacing: 8) {
                     TextField("URL or paste from clipboard", text: $urlText)
@@ -456,6 +456,9 @@ struct ContentView: View {
         .onAppear {
             playerManager.settings = settings
             playerManager.onPlaybackStarted = { url in
+                guard !history.items.contains(where: { $0.url == url.absoluteString }) else {
+                    return
+                }
                 let item = StreamItem(
                     name: {
                         let date = DateFormatter()
