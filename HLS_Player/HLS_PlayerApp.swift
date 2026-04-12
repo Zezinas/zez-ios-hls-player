@@ -6,12 +6,31 @@
 //
 
 import SwiftUI
+import AVKit
+import AVFAudio
 
 @main
 struct HLS_PlayerApp: App {
+    init() {
+        setupAudioSession()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
+    }
+}
+
+func setupAudioSession() {
+    do {
+        try AVAudioSession.sharedInstance().setCategory(
+            .playback,
+            mode: .moviePlayback,
+            options: []
+        )
+        try AVAudioSession.sharedInstance().setActive(true)
+    } catch {
+        print("Audio session error:", error)
     }
 }
