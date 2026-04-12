@@ -64,6 +64,22 @@ class HistoryStore: ObservableObject {
         items[index] = item
         save()
     }
+    
+    func saveThumbnail(_ image: UIImage, for itemID: UUID) {
+        let filename = "\(itemID.uuidString).jpg"
+        let fileURL  = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(filename)
+
+        if let data = image.jpegData(compressionQuality: 0.7) {
+            try? data.write(to: fileURL)
+        }
+
+        if let index = items.firstIndex(where: { $0.id == itemID }) {
+            items[index].thumbnailFilename = filename
+            save()
+        }
+    }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(items) else { return }

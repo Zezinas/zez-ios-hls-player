@@ -89,6 +89,40 @@ class PlayerManager: ObservableObject {
         player        = nil
         playerWrapper = nil
     }
+
+    func generateThumbnail(for itemID: UUID, into history: HistoryStore) {
+        guard let currentItem = player?.currentItem else { return }
+
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        currentItem.add(output)
+
+        // Wait a few seconds for frames to be available then grab one
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 5) {
+            let time = output.itemTime(forHostTime: CACurrentMediaTime())
+            guard output.hasNewPixelBuffer(forItemTime: time),
+                  let pixelBuffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
+            else {
+                currentItem.remove(output)
+                return
+            }
+
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let context = CIContext()
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+                currentItem.remove(output)
+                return
+            }
+
+            let image = UIImage(cgImage: cgImage)
+            currentItem.remove(output)
+
+            Task { @MainActor in
+                history.saveThumbnail(image, for: itemID)
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -217,11 +251,23 @@ struct StreamRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(uiColor: .systemGray5))
                 .frame(width: 72, height: 48)
-                .overlay(
-                    Image(systemName: "video.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(Color(uiColor: .systemGray3))
-                )
+                .overlay {
+                    if let filename = item.thumbnailFilename,
+                       let uiImage = UIImage(contentsOfFile:
+                           FileManager.default
+                               .urls(for: .documentDirectory, in: .userDomainMask)[0]
+                               .appendingPathComponent(filename).path) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                    } else {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(Color(uiColor: .systemGray3))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name)
@@ -250,7 +296,7 @@ struct StreamRow: View {
 struct ContentView: View {
     @StateObject private var playerManager = PlayerManager()
     @StateObject private var history       = HistoryStore()
-    
+
     @StateObject private var settings    = SettingsStore()
     @State private var showingSettings   = false
 
@@ -320,7 +366,7 @@ struct ContentView: View {
                                     .tint(.orange)
                                 }
                         }
-                        
+
                         // ── Hints row ──
                         HStack {
                             Label("swipe left to delete", systemImage: "arrow.left")
@@ -337,7 +383,7 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                 }
-                
+
                 // ── URL bar (Safari-style, pinned top) ──
                 HStack(spacing: 8) {
                     TextField("URL or paste from clipboard", text: $urlText)
@@ -421,6 +467,7 @@ struct ContentView: View {
                     url: url.absoluteString
                 )
                 history.add(item)
+                playerManager.generateThumbnail(for: item.id, into: history)
             }
         }
 
@@ -456,3 +503,8 @@ struct ContentView: View {
 // In Xcode:
 // Target → Signing & Capabilities → + Capability → Background Modes
 // Audio, AirPlay, and Picture in Picture
+
+// Enabling access to apps files via files app
+// target -> Info.plist -> Key (+)
+// UIFileSharingEnabled = YES                   // Application supports iTunes file sharing
+// LSSupportsOpeningDocumentsInPlace = YES      // Supports opening documents in place
