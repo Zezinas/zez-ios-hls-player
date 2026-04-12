@@ -16,6 +16,7 @@ struct StreamItem: Identifiable, Codable {
     var url: String
     var addedAt: Date = Date()
     var thumbnailFilename: String? = nil
+    var resumePosition: Double? = nil
 
     var relativeTime: String {
         let seconds = Date().timeIntervalSince(addedAt)
@@ -62,6 +63,12 @@ class HistoryStore: ObservableObject {
     func update(_ item: StreamItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index] = item
+        save()
+    }
+    
+    func updatePosition(_ seconds: Double, for id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].resumePosition = seconds
         save()
     }
     

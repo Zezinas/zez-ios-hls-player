@@ -33,12 +33,13 @@ class PlayerManager: ObservableObject {
 
     // Called by ContentView once playback confirmed started
     var onPlaybackStarted: ((URL) -> Void)?
+    var onWillDismiss: ((Double) -> Void)?
 
     private var statusObserver: AnyCancellable?
-
-    func play(url: URL) {
+    
+    func play(url: URL, resumeAt seconds: Double? = nil) {
         cleanup()
-
+        
         let headers = [
             "Referer": settings?.referer ?? "https://www.patreon.com/",
             "Origin":  settings?.origin  ?? "https://www.patreon.com/"
@@ -52,7 +53,6 @@ class PlayerManager: ObservableObject {
         self.player        = newPlayer
         self.playerWrapper = PlayerWrapper(player: newPlayer)
 
-        // Observe status — only fire onPlaybackStarted once playing is confirmed
         statusObserver = newPlayer.publisher(for: \.timeControlStatus)
             .filter { $0 == .playing }
             .first()
@@ -60,7 +60,13 @@ class PlayerManager: ObservableObject {
                 self?.onPlaybackStarted?(url)
             }
 
-        newPlayer.play()
+        if let t = seconds, t > 5 {
+            newPlayer.seek(to: CMTime(seconds: t, preferredTimescale: 600)) { _ in
+                newPlayer.play()
+            }
+        } else {
+            newPlayer.play()
+        }
     }
 
     func playFromClipboard() {
@@ -73,12 +79,12 @@ class PlayerManager: ObservableObject {
         play(url: url)
     }
 
-    func play(urlString: String) {
+    func play(urlString: String, resumeAt seconds: Double? = nil) {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = "Invalid URL."
             return
         }
-        play(url: url)
+        play(url: url, resumeAt: seconds)
     }
 
     func cleanup() {
@@ -131,6 +137,7 @@ class PlayerManager: ObservableObject {
 
 struct PlayerViewController: UIViewControllerRepresentable {
     let player: AVPlayer
+    var onWillDismiss: ((Double) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -148,19 +155,29 @@ struct PlayerViewController: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
+        let controller = HookedPlayerViewController()
         controller.player                                          = player
         controller.showsPlaybackControls                           = true
         controller.allowsPictureInPicturePlayback                  = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.delegate                                        = context.coordinator
+        controller.onWillDisappear                                 = onWillDismiss
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        if controller.player !== player {
-            controller.player = player
-        }
+        if controller.player !== player { controller.player = player }
+        (controller as? HookedPlayerViewController)?.onWillDisappear = onWillDismiss
+    }
+}
+
+class HookedPlayerViewController: AVPlayerViewController {
+    var onWillDisappear: ((Double) -> Void)?
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        let seconds = player?.currentTime().seconds ?? 0
+        onWillDisappear?(seconds)
     }
 }
 
@@ -302,6 +319,8 @@ struct ContentView: View {
 
     @State private var urlText       = ""
     @State private var editingItem:  StreamItem? = nil
+    
+    @State private var nowPlayingID: UUID? = nil
 
     var body: some View {
         NavigationStack {
@@ -344,7 +363,7 @@ struct ContentView: View {
                             StreamRow(item: item)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    playerManager.play(urlString: item.url)
+                                    playerManager.play(urlString: item.url, resumeAt: item.resumePosition)
                                 }
                                 // Swipe left → delete
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -448,29 +467,41 @@ struct ContentView: View {
         .fullScreenCover(item: $playerManager.playerWrapper, onDismiss: {
             playerManager.cleanup()
         }) { wrapper in
-            PlayerViewController(player: wrapper.player)
-                .ignoresSafeArea()
+            PlayerViewController(
+                player: wrapper.player,
+                onWillDismiss: playerManager.onWillDismiss
+            )
+            .ignoresSafeArea()
         }
 
         // ── Save to history on confirmed playback ──
         .onAppear {
             playerManager.settings = settings
+
             playerManager.onPlaybackStarted = { url in
-                guard !history.items.contains(where: { $0.url == url.absoluteString }) else {
-                    return
+                if let existing = history.items.first(where: { $0.url == url.absoluteString }) {
+                    nowPlayingID = existing.id
+                } else {
+                    let item = StreamItem(
+                        name: {
+                            let date = DateFormatter()
+                            date.dateFormat = "yyyy-MM-dd HH:mm"
+                            let suffix = url.absoluteString.suffix(10)
+                            return "\(date.string(from: Date())) [\(suffix)]"
+                        }(),
+                        creator: "unknown",
+                        url: url.absoluteString
+                    )
+                    history.add(item)
+                    nowPlayingID = item.id
+                    playerManager.generateThumbnail(for: item.id, into: history)
                 }
-                let item = StreamItem(
-                    name: {
-                        let date = DateFormatter()
-                        date.dateFormat = "yyyy-MM-dd HH:mm"
-                        let suffix = url.absoluteString.suffix(10)
-                        return "\(date.string(from: Date())) [\(suffix)]"
-                    }(),
-                    creator: "unknown",
-                    url: url.absoluteString
-                )
-                history.add(item)
-                playerManager.generateThumbnail(for: item.id, into: history)
+            }
+
+            playerManager.onWillDismiss = { seconds in
+                guard let id = nowPlayingID else { return }
+                history.updatePosition(seconds, for: id)
+                nowPlayingID = nil
             }
         }
 
