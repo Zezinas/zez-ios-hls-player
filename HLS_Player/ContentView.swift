@@ -362,32 +362,34 @@ struct ContentView: View {
                 } else {
                     List {
                         ForEach(history.items) { item in
-                            StreamRow(item: item)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
-                                    nowPlayingID = item.id                                              // ← set immediately
-                                    playerManager.play(urlString: item.url, resumeAt: item.resumePosition)
-                                }
-                                // Swipe left → delete
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        if let index = history.items.firstIndex(where: { $0.id == item.id }) {
-                                            history.delete(at: IndexSet(integer: index))
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                            Button {
+                                print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
+                                nowPlayingID = item.id
+                                playerManager.play(urlString: item.url, resumeAt: item.resumePosition)
+                            } label: {
+                                StreamRow(item: item)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)          // keeps your row's own styling intact
+                            // Swipe left → delete
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    if let index = history.items.firstIndex(where: { $0.id == item.id }) {
+                                        history.delete(at: IndexSet(integer: index))
                                     }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                // Swipe right → edit
-                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                    Button {
-                                        editingItem = item
-                                    } label: {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-                                    .tint(.orange)
+                            }
+                            // Swipe right → edit
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    editingItem = item
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
                                 }
+                                .tint(.orange)
+                            }
                         }
                         
                         // ── Hints row ──
