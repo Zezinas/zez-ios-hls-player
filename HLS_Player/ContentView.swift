@@ -36,6 +36,7 @@ class PlayerManager: ObservableObject {
     var onWillDismiss: ((Double) -> Void)?
 
     private var statusObserver: AnyCancellable?
+    private var videoOutput: AVPlayerItemVideoOutput?
     
     func play(url: URL, resumeAt seconds: Double? = nil) {
         cleanup()
@@ -49,6 +50,13 @@ class PlayerManager: ObservableObject {
             options: ["AVURLAssetHTTPHeaderFieldsKey": headers]
         )
         let item      = AVPlayerItem(asset: asset)
+        
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        item.add(output)
+        videoOutput = output
+        
         let newPlayer = AVPlayer(playerItem: item)
         self.player        = newPlayer
         self.playerWrapper = PlayerWrapper(player: newPlayer)
@@ -94,40 +102,34 @@ class PlayerManager: ObservableObject {
         player?.replaceCurrentItem(with: nil)
         player        = nil
         playerWrapper = nil
+        videoOutput   = nil
     }
     
     func generateThumbnail(for itemID: UUID, into history: HistoryStore) {
-        guard let currentItem = player?.currentItem else { return }
+        guard let output = videoOutput,
+              let currentItem = player?.currentItem else { return }
 
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-        ])
-        currentItem.add(output)
-
-        // Wait a few seconds for frames to be available then grab one
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 5) {
-            let time = output.itemTime(forHostTime: CACurrentMediaTime())
-            guard output.hasNewPixelBuffer(forItemTime: time),
-                  let pixelBuffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
-            else {
-                currentItem.remove(output)
-                return
-            }
-
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-            let context = CIContext()
-            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
-                currentItem.remove(output)
-                return
-            }
-
-            let image = UIImage(cgImage: cgImage)
+        let time = output.itemTime(forHostTime: CACurrentMediaTime())
+        guard output.hasNewPixelBuffer(forItemTime: time),
+              let pixelBuffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
+        else {
             currentItem.remove(output)
-
-            Task { @MainActor in
-                history.saveThumbnail(image, for: itemID)
-            }
+            videoOutput = nil
+            return
         }
+
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            currentItem.remove(output)
+            videoOutput = nil
+            return
+        }
+
+        let image = UIImage(cgImage: cgImage)
+        currentItem.remove(output)
+        videoOutput = nil
+        history.saveThumbnail(image, for: itemID)
     }
 }
 
@@ -501,6 +503,7 @@ struct ContentView: View {
             playerManager.onWillDismiss = { seconds in
                 guard let id = nowPlayingID else { return }
                 history.updatePosition(seconds, for: id)
+                playerManager.generateThumbnail(for: id, into: history)
                 nowPlayingID = nil
             }
         }
