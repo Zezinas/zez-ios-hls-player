@@ -224,39 +224,6 @@ struct ContentView: View {
         NavigationStack {
             VStack(spacing: 0) {
 
-                // ── URL bar (Safari-style, pinned top) ──
-                HStack(spacing: 8) {
-                    TextField("URL or paste from clipboard", text: $urlText)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(Color(uiColor: .systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                    Button {
-                        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            playerManager.playFromClipboard()
-                        } else {
-                            playerManager.play(urlString: urlText)
-                        }
-                    } label: {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
-                            .background(Color.accentColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.bar)                       // adaptive blur material
-                .overlay(alignment: .bottom) {
-                    Divider()
-                }
-
                 // ── History list ──
                 if history.items.isEmpty {
                     Spacer()
@@ -302,9 +269,46 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                 }
+                
+                // ── URL bar (Safari-style, pinned top) ──
+                HStack(spacing: 8) {
+                    TextField("URL or paste from clipboard", text: $urlText)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(Color(uiColor: .systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    Button {
+                        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            playerManager.playFromClipboard()
+                        } else {
+                            playerManager.play(urlString: urlText)
+                            urlText = ""
+                        }
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Color.accentColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .padding(.bottom, 8)
+                .background(.bar)                       // adaptive blur material
+                .overlay(alignment: .top) {
+                    Divider()
+                }
             }
-            .navigationTitle("HLS Player")
-            .navigationBarTitleDisplayMode(.inline)
+        }
+        .onTapGesture {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil)
         }
 
         // ── Playback ──
