@@ -48,11 +48,9 @@ class HistoryStore: ObservableObject {
     init() { load() }
 
     func add(_ item: StreamItem) {
-        // Avoid exact duplicate URLs back-to-back
-        if items.first?.url != item.url {
-            items.insert(item, at: 0)
-            save()
-        }
+        guard !items.contains(where: { $0.url == item.url }) else { return }
+        items.insert(item, at: 0)
+        save()
     }
 
     func delete(at offsets: IndexSet) {

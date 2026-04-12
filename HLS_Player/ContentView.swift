@@ -480,7 +480,7 @@ struct ContentView: View {
 
             playerManager.onPlaybackStarted = { url in
                 if let existing = history.items.first(where: { $0.url == url.absoluteString }) {
-                    nowPlayingID = existing.id
+                    nowPlayingID = existing.id   // covers ALL existing items including first
                 } else {
                     let item = StreamItem(
                         name: {
