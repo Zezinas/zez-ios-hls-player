@@ -344,6 +344,16 @@ struct ContentView: View {
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .submitLabel(.go)
+                        .onSubmit {
+                            if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                playerManager.playFromClipboard()
+                            } else {
+                                let submittedURL = urlText
+                                playerManager.play(urlString: submittedURL)
+                                urlText = ""
+                            }
+                        }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 9)
                         .background(Color(uiColor: .systemGray6))
@@ -353,15 +363,16 @@ struct ContentView: View {
                         if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             playerManager.playFromClipboard()
                         } else {
-                            playerManager.play(urlString: urlText)
+                            let submittedURL = urlText    // capture before clearing
+                            playerManager.play(urlString: submittedURL)
                             urlText = ""
                         }
                     } label: {
-                        Image(systemName: "play.fill")
+                        Image(systemName: urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "list.clipboard" : "play.fill")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color(uiColor: .systemGray2))
                             .frame(width: 40, height: 40)
-                            .background(Color.accentColor)
+                            .background(Color(uiColor: .systemGray6))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
@@ -373,10 +384,18 @@ struct ContentView: View {
                     Divider()
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
         }
-        .onTapGesture {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                to: nil, from: nil, for: nil)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
         }
 
         // ── Playback ──
@@ -392,9 +411,14 @@ struct ContentView: View {
             playerManager.settings = settings
             playerManager.onPlaybackStarted = { url in
                 let item = StreamItem(
-                    name:    urlText.isEmpty ? "Untitled stream" : "Stream",
+                    name: {
+                        let date = DateFormatter()
+                        date.dateFormat = "yyyy-MM-dd HH:mm"
+                        let suffix = url.absoluteString.suffix(10)
+                        return "\(date.string(from: Date())) [\(suffix)]"
+                    }(),
                     creator: "unknown",
-                    url:     url.absoluteString
+                    url: url.absoluteString
                 )
                 history.add(item)
             }

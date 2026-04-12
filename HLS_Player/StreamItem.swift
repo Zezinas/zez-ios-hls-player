@@ -15,6 +15,7 @@ struct StreamItem: Identifiable, Codable {
     var creator: String
     var url: String
     var addedAt: Date = Date()
+    var thumbnailFilename: String? = nil
 
     var relativeTime: String {
         let seconds = Date().timeIntervalSince(addedAt)
