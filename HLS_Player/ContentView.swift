@@ -37,10 +37,10 @@ class PlayerManager: ObservableObject {
 
     private var statusObserver: AnyCancellable?
     private var videoOutput: AVPlayerItemVideoOutput?
-    
+
     func play(url: URL, resumeAt seconds: Double? = nil) {
         cleanup()
-        
+
         let headers = [
             "Referer": settings?.referer ?? "https://www.patreon.com/",
             "Origin":  settings?.origin  ?? "https://www.patreon.com/"
@@ -50,13 +50,17 @@ class PlayerManager: ObservableObject {
             options: ["AVURLAssetHTTPHeaderFieldsKey": headers]
         )
         let item      = AVPlayerItem(asset: asset)
-        
+
+        let h = settings?.resolutionHeight ?? 0
+        item.preferredMaximumResolution = h == 0 ? .zero : CGSize(width: 99999, height: h)
+        item.preferredPeakBitRate       = settings?.peakBitRate ?? 0
+
         let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ])
         item.add(output)
         videoOutput = output
-        
+
         let newPlayer = AVPlayer(playerItem: item)
         self.player        = newPlayer
         self.playerWrapper = PlayerWrapper(player: newPlayer)
@@ -104,7 +108,7 @@ class PlayerManager: ObservableObject {
         playerWrapper = nil
         videoOutput   = nil
     }
-    
+
     func generateThumbnail(for itemID: UUID, into history: HistoryStore) {
         guard let output = videoOutput,
               let currentItem = player?.currentItem else { return }
@@ -232,6 +236,32 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var settings: SettingsStore
 
+    let resolutionOptions: [(label: String, height: Double)] = [
+        ("Auto",   0),
+        ("360p",   360),
+        ("480p",   480),
+        ("720p",   720),
+        ("1080p",  1080),
+        ("1440p",  1440),
+        ("2160p",  2160),
+    ]
+
+    let bitrateOptions: [(label: String, bps: Double)] = [
+        ("Auto",      0),
+        ("250 Kbps",  250_000),
+        ("500 Kbps",  500_000),
+        ("750 Kbps",  750_000),
+        ("1 Mbps",    1_000_000),
+        ("1.5 Mbps",  1_500_000),
+        ("2 Mbps",    2_000_000),
+        ("3 Mbps",    3_000_000),
+        ("4 Mbps",    4_000_000),
+        ("6 Mbps",    6_000_000),
+        ("8 Mbps",    8_000_000),
+        ("10 Mbps",   10_000_000),
+        ("16 Mbps",   16_000_000),
+    ]
+
     var body: some View {
         NavigationStack {
             Form {
@@ -244,6 +274,19 @@ struct SettingsSheet: View {
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                }
+
+                Section("Quality limits") {
+                    Picker("Resolution", selection: $settings.resolutionHeight) {
+                        ForEach(resolutionOptions, id: \.height) { option in
+                            Text(option.label).tag(option.height)
+                        }
+                    }
+                    Picker("Bitrate", selection: $settings.peakBitRate) {
+                        ForEach(bitrateOptions, id: \.bps) { option in
+                            Text(option.label).tag(option.bps)
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -315,13 +358,13 @@ struct StreamRow: View {
 struct ContentView: View {
     @StateObject private var playerManager = PlayerManager()
     @StateObject private var history       = HistoryStore()
-    
+
     @StateObject private var settings    = SettingsStore()
     @State private var showingSettings   = false
 
     @State private var urlText       = ""
     @State private var editingItem:  StreamItem? = nil
-    
+
     @State private var nowPlayingID: UUID? = nil
 
     var body: some View {
@@ -391,7 +434,7 @@ struct ContentView: View {
                                 .tint(.orange)
                             }
                         }
-                        
+
                         // ── Hints row ──
                         HStack {
                             Label("swipe left to delete", systemImage: "arrow.left")
@@ -408,7 +451,7 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                 }
-                
+
                 // ── URL bar (Safari-style, pinned top) ──
                 HStack(spacing: 8) {
                     TextField("URL or paste from clipboard", text: $urlText)

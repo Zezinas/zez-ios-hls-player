@@ -72,13 +72,13 @@ class HistoryStore: ObservableObject {
         items[index] = item
         save()
     }
-    
+
     func updatePosition(_ seconds: Double, for id: UUID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].resumePosition = seconds
         save()
     }
-    
+
     func saveThumbnail(_ image: UIImage, for itemID: UUID) {
         let filename = "\(itemID.uuidString).jpg"
         let fileURL  = FileManager.default
@@ -116,9 +116,17 @@ class SettingsStore: ObservableObject {
     @Published var origin: String {
         didSet { UserDefaults.standard.set(origin, forKey: "origin") }
     }
+    @Published var resolutionHeight: Double {
+        didSet { UserDefaults.standard.set(resolutionHeight, forKey: "resolutionHeight") }
+    }
+    @Published var peakBitRate: Double {
+        didSet { UserDefaults.standard.set(peakBitRate, forKey: "peakBitRate") }
+    }
 
     init() {
-        self.referer = UserDefaults.standard.string(forKey: "referer") ?? "https://www.patreon.com/"
-        self.origin  = UserDefaults.standard.string(forKey: "origin")  ?? "https://www.patreon.com/"
+        self.referer         = UserDefaults.standard.string(forKey: "referer") ?? "https://www.patreon.com/"
+        self.origin          = UserDefaults.standard.string(forKey: "origin")  ?? "https://www.patreon.com/"
+        self.resolutionHeight = UserDefaults.standard.double(forKey: "resolutionHeight") // 0 = Auto
+        self.peakBitRate      = UserDefaults.standard.double(forKey: "peakBitRate")      // 0 = Auto
     }
 }
