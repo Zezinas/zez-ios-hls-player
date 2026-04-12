@@ -365,6 +365,8 @@ struct ContentView: View {
                             StreamRow(item: item)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
+                                    print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
+                                    nowPlayingID = item.id                                              // ← set immediately
                                     playerManager.play(urlString: item.url, resumeAt: item.resumePosition)
                                 }
                                 // Swipe left → delete
@@ -481,23 +483,20 @@ struct ContentView: View {
             playerManager.settings = settings
 
             playerManager.onPlaybackStarted = { url in
-                if let existing = history.items.first(where: { $0.url == url.absoluteString }) {
-                    nowPlayingID = existing.id   // covers ALL existing items including first
-                } else {
-                    let item = StreamItem(
-                        name: {
-                            let date = DateFormatter()
-                            date.dateFormat = "yyyy-MM-dd HH:mm"
-                            let suffix = url.absoluteString.suffix(10)
-                            return "\(date.string(from: Date())) [\(suffix)]"
-                        }(),
-                        creator: "unknown",
-                        url: url.absoluteString
-                    )
-                    history.add(item)
-                    nowPlayingID = item.id
-                    playerManager.generateThumbnail(for: item.id, into: history)
-                }
+                guard !history.items.contains(where: { $0.url == url.absoluteString }) else { return }
+                let item = StreamItem(
+                    name: {
+                        let date = DateFormatter()
+                        date.dateFormat = "yyyy-MM-dd HH:mm"
+                        let suffix = url.absoluteString.suffix(10)
+                        return "\(date.string(from: Date())) [\(suffix)]"
+                    }(),
+                    creator: "unknown",
+                    url: url.absoluteString
+                )
+                history.add(item)
+                nowPlayingID = item.id
+                playerManager.generateThumbnail(for: item.id, into: history)
             }
 
             playerManager.onWillDismiss = { seconds in

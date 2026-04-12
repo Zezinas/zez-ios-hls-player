@@ -54,6 +54,15 @@ class HistoryStore: ObservableObject {
     }
 
     func delete(at offsets: IndexSet) {
+        let docsURL = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+        for index in offsets {
+            if let filename = items[index].thumbnailFilename {
+                try? FileManager.default.removeItem(
+                    at: docsURL.appendingPathComponent(filename)
+                )
+            }
+        }
         items.remove(atOffsets: offsets)
         save()
     }
