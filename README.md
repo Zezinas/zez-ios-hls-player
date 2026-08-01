@@ -8,6 +8,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 - Play HLS streams directly from clipboard URL
 - Play Streamable page links directly
 - Play public, unlisted, and password-protected Vimeo links directly
+- Browse History and imported playlists
 - (PiP) Picture in picture support
 - Background playback with media controls
 - Resume playback at last known timestamp
@@ -21,6 +22,30 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 
 ## Vimeo Passwords
 - Vimeo passwords entered in the app are saved in plaintext with that video in `history.json`.
+
+## Playlists
+- `history.json` is the built-in History playlist.
+- Copy playlist files to the app's `Documents/playlists/` folder through Files.
+- A playlist name is derived from its filename: `anime-reactions.json` appears as `Anime Reactions`.
+- Each playlist file is a JSON array using the same full item format as `history.json`:
+
+```json
+[
+  {
+    "id": "A40E5B54-C4D6-4E41-A131-CCB5354D314C",
+    "name": "Episode 1",
+    "creator": "Creator",
+    "url": "https://vimeo.com/123456",
+    "password": "optional-password",
+    "addedAt": 0,
+    "thumbnailFilename": null,
+    "resumePosition": null
+  }
+]
+```
+
+- `addedAt` is measured in seconds since January 1, 2001.
+- Editing or deleting a playlist item in the app rewrites that playlist JSON file.
 
 ## Known Issues
 - Sometimes clicking recent list items does nothing, holding 1-2 seconds works — you will see UI feedback that it's registering

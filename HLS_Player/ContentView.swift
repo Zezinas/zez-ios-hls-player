@@ -22,6 +22,7 @@ class PlayerWrapper: Identifiable {
 struct PlaybackRequest {
     let sourceURL: URL
     let resumeAt: Double?
+    let playlistID: String?
     let itemID: UUID?
     var password: String?
 }
@@ -51,10 +52,17 @@ class PlayerManager: ObservableObject {
     func play(
         url: URL,
         resumeAt seconds: Double? = nil,
+        playlistID: String? = nil,
         itemID: UUID? = nil,
         password: String? = nil
     ) {
-        let request = PlaybackRequest(sourceURL: url, resumeAt: seconds, itemID: itemID, password: password)
+        let request = PlaybackRequest(
+            sourceURL: url,
+            resumeAt: seconds,
+            playlistID: playlistID,
+            itemID: itemID,
+            password: password
+        )
         if itemID == nil && StreamURLResolver.isVimeoURL(url) {
             pendingRequest = request
             onVimeoPasswordRequired?(nil)
@@ -164,6 +172,7 @@ class PlayerManager: ObservableObject {
     func play(
         urlString: String,
         resumeAt seconds: Double? = nil,
+        playlistID: String? = nil,
         itemID: UUID? = nil,
         password: String? = nil
     ) {
@@ -171,7 +180,13 @@ class PlayerManager: ObservableObject {
             errorMessage = "Invalid URL."
             return
         }
-        play(url: url, resumeAt: seconds, itemID: itemID, password: password)
+        play(
+            url: url,
+            resumeAt: seconds,
+            playlistID: playlistID,
+            itemID: itemID,
+            password: password
+        )
     }
 
     func cleanup() {
@@ -190,7 +205,7 @@ class PlayerManager: ObservableObject {
         videoOutput   = nil
     }
 
-    func generateThumbnail(for itemID: UUID, into history: HistoryStore) {
+    func generateThumbnail(for itemID: UUID, in playlistID: String, into playlists: PlaylistStore) {
         guard let output = videoOutput,
               let currentItem = player?.currentItem else { return }
 
@@ -214,7 +229,7 @@ class PlayerManager: ObservableObject {
         let image = UIImage(cgImage: cgImage)
         currentItem.remove(output)
         videoOutput = nil
-        history.saveThumbnail(image, for: itemID)
+        playlists.saveThumbnail(image, for: itemID, in: playlistID)
     }
 }
 
@@ -445,258 +460,201 @@ struct StreamRow: View {
 // MARK: ContentView
 // ─────────────────────────────────────────────
 
+struct PlaylistRow: View {
+    let playlist: Playlist
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: playlist.isHistory ? "clock.arrow.circlepath" : "folder.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(playlist.isHistory ? .blue : .orange)
+                .frame(width: 36)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(playlist.name)
+                    .font(.system(size: 16, weight: .medium))
+                Text("\(playlist.items.count) \(playlist.items.count == 1 ? "video" : "videos")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 5)
+    }
+}
+
+struct PlaylistDetailView: View {
+    @ObservedObject var playlists: PlaylistStore
+    let playlistID: String
+    @ObservedObject var playerManager: PlayerManager
+    let onPlayItem: (StreamItem, String) -> Void
+
+    @State private var urlText = ""
+    @State private var editingItem: StreamItem?
+
+    private var playlist: Playlist? {
+        playlists.playlist(id: playlistID)
+    }
+
+    var body: some View {
+        Group {
+            if let playlist {
+                VStack(spacing: 0) {
+                    if playlist.items.isEmpty {
+                        Spacer()
+                        VStack(spacing: 8) {
+                            Image(systemName: "play.rectangle.on.rectangle")
+                                .font(.system(size: 44))
+                                .foregroundStyle(.tertiary)
+                            Text("No videos yet")
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(playlist.items) { item in
+                                Button {
+                                    onPlayItem(item, playlistID)
+                                } label: {
+                                    StreamRow(item: item)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        playlists.delete(itemID: item.id, from: playlistID)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                    Button {
+                                        editingItem = item
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    .tint(.orange)
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField("URL or paste from clipboard", text: $urlText)
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.go)
+                            .onSubmit { playEnteredURL() }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(Color(uiColor: .systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        Button(action: playEnteredURL) {
+                            Image(systemName: urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "list.clipboard" : "play.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Color(uiColor: .systemGray2))
+                                .frame(width: 40, height: 40)
+                                .background(Color(uiColor: .systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .padding(.bottom, 8)
+                    .background(.bar)
+                    .overlay(alignment: .top) { Divider() }
+                }
+                .navigationTitle(playlist.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .sheet(item: $editingItem) { item in
+                    EditItemSheet(item: item) { updated in
+                        playlists.update(updated, in: playlistID)
+                    }
+                }
+            } else {
+                ContentUnavailableView("Playlist Not Found", systemImage: "folder.badge.questionmark")
+            }
+        }
+    }
+
+    private func playEnteredURL() {
+        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            playerManager.playFromClipboard()
+        } else {
+            playerManager.play(urlString: urlText)
+            urlText = ""
+        }
+    }
+}
+
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var playerManager = PlayerManager()
-    @StateObject private var history       = HistoryStore()
+    @StateObject private var playlists = PlaylistStore()
+    @StateObject private var settings = SettingsStore()
 
-    @StateObject private var settings    = SettingsStore()
-    @State private var showingSettings   = false
-
-    @State private var urlText       = ""
-    @State private var editingItem:  StreamItem? = nil
-
-    @State private var nowPlayingID: UUID? = nil
+    @State private var showingSettings = false
+    @State private var nowPlayingPlaylistID: String?
+    @State private var nowPlayingID: UUID?
     @State private var showingVimeoPassword = false
     @State private var vimeoPassword = ""
-    @State private var vimeoPasswordMessage: String? = nil
+    @State private var vimeoPasswordMessage: String?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // ── Header Recent ──
-                HStack {
-                    Text("RECENT")
+            List(playlists.playlists) { playlist in
+                NavigationLink {
+                    PlaylistDetailView(
+                        playlists: playlists,
+                        playlistID: playlist.id,
+                        playerManager: playerManager,
+                        onPlayItem: play
+                    )
+                } label: {
+                    PlaylistRow(playlist: playlist)
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("PLAYLISTS")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("SETTINGS") { showingSettings = true }
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .kerning(0.5)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
-                    Button("SETTINGS") {
-                        showingSettings = true
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .kerning(0.5)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-
-                // ── History list ──
-                if history.items.isEmpty {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "play.rectangle.on.rectangle")
-                            .font(.system(size: 44))
-                            .foregroundStyle(.tertiary)
-                        Text("No history yet")
-                            .foregroundStyle(.secondary)
-                        Text("Play a stream to see it here")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(history.items) { item in
-                            Button {
-                                 print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
-                                 nowPlayingID = item.id
-                                playerManager.play(
-                                    urlString: item.url,
-                                    resumeAt: item.resumePosition,
-                                    itemID: item.id,
-                                    password: item.password
-                                )
-                            } label: {
-                                StreamRow(item: item)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)          // keeps your row's own styling intact
-                            // Swipe left → delete
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    if let index = history.items.firstIndex(where: { $0.id == item.id }) {
-                                        history.delete(at: IndexSet(integer: index))
-                                    }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            // Swipe right → edit
-                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                Button {
-                                    editingItem = item
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.orange)
-                            }
-                        }
-
-                        // ── Hints row ──
-                        HStack {
-                            Label("swipe left to delete", systemImage: "arrow.left")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                            Spacer()
-                            Label("swipe right to edit", systemImage: "arrow.right")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                                .environment(\.layoutDirection, .rightToLeft)
-                        }
-                        .padding(.vertical, 0)
-                        .listRowSeparator(.hidden)   // hides the divider above the hints row
-                    }
-                    .listStyle(.plain)
-                }
-
-                // ── URL bar (Safari-style, pinned top) ──
-                HStack(spacing: 8) {
-                    TextField("URL or paste from clipboard", text: $urlText)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .submitLabel(.go)
-                        .onSubmit {
-                            if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                playerManager.playFromClipboard()
-                            } else {
-                                let submittedURL = urlText
-                                playerManager.play(urlString: submittedURL)
-                                urlText = ""
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(Color(uiColor: .systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                    Button {
-                        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            playerManager.playFromClipboard()
-                        } else {
-                            let submittedURL = urlText    // capture before clearing
-                            playerManager.play(urlString: submittedURL)
-                            urlText = ""
-                        }
-                    } label: {
-                        Image(systemName: urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "list.clipboard" : "play.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(Color(uiColor: .systemGray2))
-                            .frame(width: 40, height: 40)
-                            .background(Color(uiColor: .systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .padding(.bottom, 8)
-                .background(.bar)                       // adaptive blur material
-                .overlay(alignment: .top) {
-                    Divider()
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             }
         }
-
-        // ── Playback ──
         .fullScreenCover(item: $playerManager.playerWrapper, onDismiss: {
             playerManager.cleanup()
         }) { wrapper in
-            PlayerViewController(
-                player: wrapper.player,
-                onWillDismiss: playerManager.onWillDismiss
-            )
-            .ignoresSafeArea()
+            PlayerViewController(player: wrapper.player, onWillDismiss: playerManager.onWillDismiss)
+                .ignoresSafeArea()
         }
-
-        // ── Save to history on confirmed playback ──
         .onAppear {
-            playerManager.settings = settings
-
-            playerManager.onPlaybackStarted = { stream, request in
-                let existingIndex = request.itemID.flatMap { id in
-                    history.items.firstIndex(where: { $0.id == id })
-                } ?? history.items.firstIndex(where: { $0.url == stream.sourceURL.absoluteString })
-                if let existingIndex {
-                    if let password = request.password,
-                       history.items[existingIndex].password != password {
-                        var updatedItem = history.items[existingIndex]
-                        updatedItem.password = password
-                        history.update(updatedItem)
-                    }
-                    return
-                }
-                let item = StreamItem(
-                    name: {
-                        if let title = stream.title { return title }
-                        let date = DateFormatter()
-                        date.dateFormat = "yyyy-MM-dd HH:mm"
-                        let suffix = stream.sourceURL.absoluteString.suffix(10)
-                        return "\(date.string(from: Date())) [\(suffix)]"
-                    }(),
-                    creator: stream.creator ?? "unknown",
-                    url: stream.sourceURL.absoluteString,
-                    password: request.password
-                )
-                history.add(item)
-                nowPlayingID = item.id
-                if let thumbnailURL = stream.thumbnailURL {
-                    Task {
-                        await history.saveThumbnail(from: thumbnailURL, for: item.id)
-                    }
-                }
-                playerManager.generateThumbnail(for: item.id, into: history)
-            }
-
-            playerManager.onWillDismiss = { seconds in
-                guard let id = nowPlayingID else { return }
-                history.updatePosition(seconds, for: id)
-                playerManager.generateThumbnail(for: id, into: history)
-                nowPlayingID = nil
-            }
-
-            playerManager.onVimeoPasswordRequired = { message in
-                vimeoPassword = ""
-                vimeoPasswordMessage = message
-                showingVimeoPassword = true
-            }
+            playlists.reload()
+            configurePlayerCallbacks()
         }
-
-        // ── Edit sheet ──
-        .sheet(item: $editingItem) { item in
-            EditItemSheet(item: item) { updated in
-                history.update(updated)
-            }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { playlists.reload() }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsSheet(settings: settings)
         }
-
         .alert("Vimeo Password", isPresented: $showingVimeoPassword) {
             SecureField("Password", text: $vimeoPassword)
-            Button("Cancel", role: .cancel) {
-                playerManager.cancelPendingPlayback()
-            }
-            Button("Play") {
-                playerManager.submitVimeoPassword(vimeoPassword)
-            }
+            Button("Cancel", role: .cancel) { playerManager.cancelPendingPlayback() }
+            Button("Play") { playerManager.submitVimeoPassword(vimeoPassword) }
         } message: {
             Text(vimeoPasswordMessage ?? "Enter the password for this Vimeo video.")
         }
-
-        // ── Error alert ──
         .alert(
             "Playback Error",
             isPresented: Binding(
@@ -708,6 +666,76 @@ struct ContentView: View {
         } message: {
             Text(playerManager.errorMessage ?? "")
         }
+    }
+
+    private func play(_ item: StreamItem, in playlistID: String) {
+        nowPlayingPlaylistID = playlistID
+        nowPlayingID = item.id
+        playerManager.play(
+            urlString: item.url,
+            resumeAt: item.resumePosition,
+            playlistID: playlistID,
+            itemID: item.id,
+            password: item.password
+        )
+    }
+
+    private func configurePlayerCallbacks() {
+        playerManager.settings = settings
+        playerManager.onPlaybackStarted = { stream, request in
+            if let playlistID = request.playlistID,
+               let itemID = request.itemID,
+               var item = playlists.playlist(id: playlistID)?.items.first(where: { $0.id == itemID }) {
+                if let password = request.password, item.password != password {
+                    item.password = password
+                    playlists.update(item, in: playlistID)
+                }
+                return
+            }
+
+            if let existing = playlists.playlist(id: "history")?.items.first(where: { $0.url == stream.sourceURL.absoluteString }) {
+                if let password = request.password, existing.password != password {
+                    var updated = existing
+                    updated.password = password
+                    playlists.update(updated, in: "history")
+                }
+                return
+            }
+
+            let item = StreamItem(
+                name: stream.title ?? defaultName(for: stream.sourceURL),
+                creator: stream.creator ?? "unknown",
+                url: stream.sourceURL.absoluteString,
+                password: request.password
+            )
+            playlists.addToHistory(item)
+            nowPlayingPlaylistID = "history"
+            nowPlayingID = item.id
+            if let thumbnailURL = stream.thumbnailURL {
+                Task { await playlists.saveThumbnail(from: thumbnailURL, for: item.id, in: "history") }
+            }
+            playerManager.generateThumbnail(for: item.id, in: "history", into: playlists)
+        }
+
+        playerManager.onWillDismiss = { seconds in
+            guard let playlistID = nowPlayingPlaylistID, let itemID = nowPlayingID else { return }
+            playlists.updatePosition(seconds, for: itemID, in: playlistID)
+            playerManager.generateThumbnail(for: itemID, in: playlistID, into: playlists)
+            nowPlayingPlaylistID = nil
+            nowPlayingID = nil
+        }
+
+        playerManager.onVimeoPasswordRequired = { message in
+            vimeoPassword = ""
+            vimeoPasswordMessage = message
+            showingVimeoPassword = true
+        }
+    }
+
+    private func defaultName(for url: URL) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return "\(formatter.string(from: Date())) [\(url.absoluteString.suffix(10))]"
     }
 }
 
