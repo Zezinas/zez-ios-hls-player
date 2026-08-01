@@ -32,21 +32,37 @@ class PlayerManager: ObservableObject {
     private(set) var player: AVPlayer?
 
     // Called by ContentView once playback confirmed started
-    var onPlaybackStarted: ((URL) -> Void)?
+    var onPlaybackStarted: ((ResolvedStream) -> Void)?
     var onWillDismiss: ((Double) -> Void)?
 
     private var statusObserver: AnyCancellable?
     private var videoOutput: AVPlayerItemVideoOutput?
+    private var playbackRequestID = UUID()
 
     func play(url: URL, resumeAt seconds: Double? = nil) {
         cleanup()
+        let requestID = UUID()
+        playbackRequestID = requestID
 
+        Task { [weak self] in
+            do {
+                let stream = try await StreamURLResolver.resolve(url)
+                guard let self, self.playbackRequestID == requestID else { return }
+                self.startPlayback(stream, resumeAt: seconds)
+            } catch {
+                guard let self, self.playbackRequestID == requestID else { return }
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func startPlayback(_ stream: ResolvedStream, resumeAt seconds: Double?) {
         let headers = [
             "Referer": settings?.referer ?? "https://www.patreon.com/",
             "Origin":  settings?.origin  ?? "https://www.patreon.com/"
         ]
         let asset = AVURLAsset(
-            url: url,
+            url: stream.playbackURL,
             options: ["AVURLAssetHTTPHeaderFieldsKey": headers]
         )
         let item      = AVPlayerItem(asset: asset)
@@ -69,7 +85,7 @@ class PlayerManager: ObservableObject {
             .filter { $0 == .playing }
             .first()
             .sink { [weak self] _ in
-                self?.onPlaybackStarted?(url)
+                self?.onPlaybackStarted?(stream)
             }
 
         if let t = seconds, t > 5 {
@@ -100,6 +116,7 @@ class PlayerManager: ObservableObject {
     }
 
     func cleanup() {
+        playbackRequestID = UUID()
         statusObserver?.cancel()
         statusObserver  = nil
         player?.pause()
@@ -527,20 +544,26 @@ struct ContentView: View {
         .onAppear {
             playerManager.settings = settings
 
-            playerManager.onPlaybackStarted = { url in
-                guard !history.items.contains(where: { $0.url == url.absoluteString }) else { return }
+            playerManager.onPlaybackStarted = { stream in
+                guard !history.items.contains(where: { $0.url == stream.sourceURL.absoluteString }) else { return }
                 let item = StreamItem(
                     name: {
+                        if let title = stream.title { return title }
                         let date = DateFormatter()
                         date.dateFormat = "yyyy-MM-dd HH:mm"
-                        let suffix = url.absoluteString.suffix(10)
+                        let suffix = stream.sourceURL.absoluteString.suffix(10)
                         return "\(date.string(from: Date())) [\(suffix)]"
                     }(),
                     creator: "unknown",
-                    url: url.absoluteString
+                    url: stream.sourceURL.absoluteString
                 )
                 history.add(item)
                 nowPlayingID = item.id
+                if let thumbnailURL = stream.thumbnailURL {
+                    Task {
+                        await history.saveThumbnail(from: thumbnailURL, for: item.id)
+                    }
+                }
                 playerManager.generateThumbnail(for: item.id, into: history)
             }
 

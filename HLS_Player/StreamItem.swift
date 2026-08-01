@@ -95,6 +95,15 @@ class HistoryStore: ObservableObject {
         }
     }
 
+    func saveThumbnail(from url: URL, for itemID: UUID) async {
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let image = UIImage(data: data),
+              items.first(where: { $0.id == itemID })?.thumbnailFilename == nil
+        else { return }
+
+        saveThumbnail(image, for: itemID)
+    }
+
     private func save() {
         guard let data = try? JSONEncoder().encode(items) else { return }
         try? data.write(to: saveURL, options: .atomic)

@@ -6,6 +6,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 
 ## Features
 - Play HLS streams directly from clipboard URL
+- Play Streamable page links directly
 - (PiP) Picture in picture support
 - Background playback with media controls
 - Resume playback at last known timestamp
