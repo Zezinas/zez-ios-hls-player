@@ -290,6 +290,15 @@ struct EditItemSheet: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
+                Section("Access") {
+                    TextField(
+                        "Password (optional)",
+                        text: Binding(
+                            get: { item.password ?? "" },
+                            set: { item.password = $0.isEmpty ? nil : $0 }
+                        )
+                    )
+                }
             }
             .navigationTitle("Edit item")
             .navigationBarTitleDisplayMode(.inline)
