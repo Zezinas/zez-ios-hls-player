@@ -481,6 +481,49 @@ struct PlaylistRow: View {
     }
 }
 
+struct StreamInputBar: View {
+    @Binding var urlText: String
+    @ObservedObject var playerManager: PlayerManager
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("URL or paste from clipboard", text: $urlText)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.go)
+                .onSubmit { playEnteredURL() }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color(uiColor: .systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Button(action: playEnteredURL) {
+                Image(systemName: urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "list.clipboard" : "play.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(uiColor: .systemGray2))
+                    .frame(width: 40, height: 40)
+                    .background(Color(uiColor: .systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .padding(.bottom, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func playEnteredURL() {
+        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            playerManager.playFromClipboard()
+        } else {
+            playerManager.play(urlString: urlText)
+            urlText = ""
+        }
+    }
+}
+
 struct PlaylistDetailView: View {
     @ObservedObject var playlists: PlaylistStore
     let playlistID: String
@@ -538,32 +581,7 @@ struct PlaylistDetailView: View {
                         .listStyle(.plain)
                     }
 
-                    HStack(spacing: 8) {
-                        TextField("URL or paste from clipboard", text: $urlText)
-                            .keyboardType(.URL)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.go)
-                            .onSubmit { playEnteredURL() }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
-                            .background(Color(uiColor: .systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                        Button(action: playEnteredURL) {
-                            Image(systemName: urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "list.clipboard" : "play.fill")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(Color(uiColor: .systemGray2))
-                                .frame(width: 40, height: 40)
-                                .background(Color(uiColor: .systemGray6))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .padding(.bottom, 8)
-                    .background(.bar)
-                    .overlay(alignment: .top) { Divider() }
+                    StreamInputBar(urlText: $urlText, playerManager: playerManager)
                 }
                 .navigationTitle(playlist.name)
                 .navigationBarTitleDisplayMode(.inline)
@@ -578,14 +596,6 @@ struct PlaylistDetailView: View {
         }
     }
 
-    private func playEnteredURL() {
-        if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            playerManager.playFromClipboard()
-        } else {
-            playerManager.play(urlString: urlText)
-            urlText = ""
-        }
-    }
 }
 
 struct ContentView: View {
@@ -595,6 +605,7 @@ struct ContentView: View {
     @StateObject private var settings = SettingsStore()
 
     @State private var showingSettings = false
+    @State private var urlText = ""
     @State private var nowPlayingPlaylistID: String?
     @State private var nowPlayingID: UUID?
     @State private var showingVimeoPassword = false
@@ -603,19 +614,22 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List(playlists.playlists) { playlist in
-                NavigationLink {
-                    PlaylistDetailView(
-                        playlists: playlists,
-                        playlistID: playlist.id,
-                        playerManager: playerManager,
-                        onPlayItem: play
-                    )
-                } label: {
-                    PlaylistRow(playlist: playlist)
+            VStack(spacing: 0) {
+                List(playlists.playlists) { playlist in
+                    NavigationLink {
+                        PlaylistDetailView(
+                            playlists: playlists,
+                            playlistID: playlist.id,
+                            playerManager: playerManager,
+                            onPlayItem: play
+                        )
+                    } label: {
+                        PlaylistRow(playlist: playlist)
+                    }
                 }
+                .listStyle(.plain)
+                StreamInputBar(urlText: $urlText, playerManager: playerManager)
             }
-            .listStyle(.plain)
             .navigationTitle("PLAYLISTS")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
