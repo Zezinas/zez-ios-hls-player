@@ -7,6 +7,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 ## Features
 - Play HLS streams directly from clipboard URL
 - Play Streamable page links directly
+- Play public, unlisted, and password-protected Vimeo links directly
 - (PiP) Picture in picture support
 - Background playback with media controls
 - Resume playback at last known timestamp
@@ -17,6 +18,9 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 - Custom Referer and Origin HTTP headers setting
 - Preferred maximum resolution setting
 - Preferred maximum bitrate setting
+
+## Vimeo Passwords
+- Vimeo passwords entered in the app are saved in plaintext with that video in `history.json`.
 
 ## Known Issues
 - Sometimes clicking recent list items does nothing, holding 1-2 seconds works — you will see UI feedback that it's registering

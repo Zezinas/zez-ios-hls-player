@@ -14,6 +14,7 @@ struct StreamItem: Identifiable, Codable {
     var name: String
     var creator: String
     var url: String
+    var password: String? = nil
     var addedAt: Date = Date()
     var thumbnailFilename: String? = nil
     var resumePosition: Double? = nil

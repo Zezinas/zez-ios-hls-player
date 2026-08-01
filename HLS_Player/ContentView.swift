@@ -19,6 +19,13 @@ class PlayerWrapper: Identifiable {
     init(player: AVPlayer) { self.player = player }
 }
 
+struct PlaybackRequest {
+    let sourceURL: URL
+    let resumeAt: Double?
+    let itemID: UUID?
+    var password: String?
+}
+
 // ─────────────────────────────────────────────
 // MARK: PlayerManager
 // ─────────────────────────────────────────────
@@ -32,31 +39,78 @@ class PlayerManager: ObservableObject {
     private(set) var player: AVPlayer?
 
     // Called by ContentView once playback confirmed started
-    var onPlaybackStarted: ((ResolvedStream) -> Void)?
+    var onPlaybackStarted: ((ResolvedStream, PlaybackRequest) -> Void)?
     var onWillDismiss: ((Double) -> Void)?
+    var onVimeoPasswordRequired: ((String?) -> Void)?
 
     private var statusObserver: AnyCancellable?
     private var videoOutput: AVPlayerItemVideoOutput?
     private var playbackRequestID = UUID()
+    private var pendingRequest: PlaybackRequest?
 
-    func play(url: URL, resumeAt seconds: Double? = nil) {
+    func play(
+        url: URL,
+        resumeAt seconds: Double? = nil,
+        itemID: UUID? = nil,
+        password: String? = nil
+    ) {
+        let request = PlaybackRequest(sourceURL: url, resumeAt: seconds, itemID: itemID, password: password)
+        if itemID == nil && StreamURLResolver.isVimeoURL(url) {
+            pendingRequest = request
+            onVimeoPasswordRequired?(nil)
+            return
+        }
+        beginPlayback(request)
+    }
+
+    func submitVimeoPassword(_ password: String) {
+        guard var request = pendingRequest else { return }
+        request.password = password.isEmpty ? nil : password
+        beginPlayback(request)
+    }
+
+    func cancelPendingPlayback() {
         cleanup()
+    }
+
+    private func beginPlayback(_ request: PlaybackRequest) {
+        resetPlayer()
+        pendingRequest = request
         let requestID = UUID()
         playbackRequestID = requestID
+        let headers = [
+            "Referer": settings?.referer ?? "https://www.patreon.com/",
+            "Origin": settings?.origin ?? "https://www.patreon.com/"
+        ]
 
         Task { [weak self] in
             do {
-                let stream = try await StreamURLResolver.resolve(url)
+                let stream = try await StreamURLResolver.resolve(
+                    request.sourceURL,
+                    headers: headers,
+                    password: request.password
+                )
                 guard let self, self.playbackRequestID == requestID else { return }
-                self.startPlayback(stream, resumeAt: seconds)
+                self.startPlayback(stream, request: request)
             } catch {
                 guard let self, self.playbackRequestID == requestID else { return }
+                switch error as? StreamResolutionError {
+                case .vimeoPasswordRequired?, .vimeoIncorrectPassword?:
+                    if request.itemID == nil {
+                        self.onVimeoPasswordRequired?(error.localizedDescription)
+                    } else {
+                        self.errorMessage = error.localizedDescription
+                    }
+                    return
+                default:
+                    break
+                }
                 self.errorMessage = error.localizedDescription
             }
         }
     }
 
-    private func startPlayback(_ stream: ResolvedStream, resumeAt seconds: Double?) {
+    private func startPlayback(_ stream: ResolvedStream, request: PlaybackRequest) {
         let headers = [
             "Referer": settings?.referer ?? "https://www.patreon.com/",
             "Origin":  settings?.origin  ?? "https://www.patreon.com/"
@@ -85,10 +139,10 @@ class PlayerManager: ObservableObject {
             .filter { $0 == .playing }
             .first()
             .sink { [weak self] _ in
-                self?.onPlaybackStarted?(stream)
+                self?.onPlaybackStarted?(stream, request)
             }
 
-        if let t = seconds, t > 5 {
+        if let t = request.resumeAt, t > 5 {
             newPlayer.seek(to: CMTime(seconds: t, preferredTimescale: 600)) { _ in
                 newPlayer.play()
             }
@@ -107,15 +161,25 @@ class PlayerManager: ObservableObject {
         play(url: url)
     }
 
-    func play(urlString: String, resumeAt seconds: Double? = nil) {
+    func play(
+        urlString: String,
+        resumeAt seconds: Double? = nil,
+        itemID: UUID? = nil,
+        password: String? = nil
+    ) {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             errorMessage = "Invalid URL."
             return
         }
-        play(url: url, resumeAt: seconds)
+        play(url: url, resumeAt: seconds, itemID: itemID, password: password)
     }
 
     func cleanup() {
+        pendingRequest = nil
+        resetPlayer()
+    }
+
+    private func resetPlayer() {
         playbackRequestID = UUID()
         statusObserver?.cancel()
         statusObserver  = nil
@@ -383,6 +447,9 @@ struct ContentView: View {
     @State private var editingItem:  StreamItem? = nil
 
     @State private var nowPlayingID: UUID? = nil
+    @State private var showingVimeoPassword = false
+    @State private var vimeoPassword = ""
+    @State private var vimeoPasswordMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -423,9 +490,14 @@ struct ContentView: View {
                     List {
                         ForEach(history.items) { item in
                             Button {
-                                print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
-                                nowPlayingID = item.id
-                                playerManager.play(urlString: item.url, resumeAt: item.resumePosition)
+                                 print("Tapping item: \(item.name), resumePosition: \(String(describing: item.resumePosition)), url: \(item.url.prefix(50))")
+                                 nowPlayingID = item.id
+                                playerManager.play(
+                                    urlString: item.url,
+                                    resumeAt: item.resumePosition,
+                                    itemID: item.id,
+                                    password: item.password
+                                )
                             } label: {
                                 StreamRow(item: item)
                                     .contentShape(Rectangle())
@@ -544,8 +616,19 @@ struct ContentView: View {
         .onAppear {
             playerManager.settings = settings
 
-            playerManager.onPlaybackStarted = { stream in
-                guard !history.items.contains(where: { $0.url == stream.sourceURL.absoluteString }) else { return }
+            playerManager.onPlaybackStarted = { stream, request in
+                let existingIndex = request.itemID.flatMap { id in
+                    history.items.firstIndex(where: { $0.id == id })
+                } ?? history.items.firstIndex(where: { $0.url == stream.sourceURL.absoluteString })
+                if let existingIndex {
+                    if let password = request.password,
+                       history.items[existingIndex].password != password {
+                        var updatedItem = history.items[existingIndex]
+                        updatedItem.password = password
+                        history.update(updatedItem)
+                    }
+                    return
+                }
                 let item = StreamItem(
                     name: {
                         if let title = stream.title { return title }
@@ -554,8 +637,9 @@ struct ContentView: View {
                         let suffix = stream.sourceURL.absoluteString.suffix(10)
                         return "\(date.string(from: Date())) [\(suffix)]"
                     }(),
-                    creator: "unknown",
-                    url: stream.sourceURL.absoluteString
+                    creator: stream.creator ?? "unknown",
+                    url: stream.sourceURL.absoluteString,
+                    password: request.password
                 )
                 history.add(item)
                 nowPlayingID = item.id
@@ -573,6 +657,12 @@ struct ContentView: View {
                 playerManager.generateThumbnail(for: id, into: history)
                 nowPlayingID = nil
             }
+
+            playerManager.onVimeoPasswordRequired = { message in
+                vimeoPassword = ""
+                vimeoPasswordMessage = message
+                showingVimeoPassword = true
+            }
         }
 
         // ── Edit sheet ──
@@ -583,6 +673,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsSheet(settings: settings)
+        }
+
+        .alert("Vimeo Password", isPresented: $showingVimeoPassword) {
+            SecureField("Password", text: $vimeoPassword)
+            Button("Cancel", role: .cancel) {
+                playerManager.cancelPendingPlayback()
+            }
+            Button("Play") {
+                playerManager.submitVimeoPassword(vimeoPassword)
+            }
+        } message: {
+            Text(vimeoPasswordMessage ?? "Enter the password for this Vimeo video.")
         }
 
         // ── Error alert ──
