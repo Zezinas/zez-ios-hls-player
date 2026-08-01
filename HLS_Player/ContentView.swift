@@ -159,14 +159,14 @@ class PlayerManager: ObservableObject {
         }
     }
 
-    func playFromClipboard() {
+    func playFromClipboard(playlistID: String? = nil) {
         guard let clipboardString = UIPasteboard.general.string,
               let url = URL(string: clipboardString.trimmingCharacters(in: .whitespacesAndNewlines))
         else {
             errorMessage = "No valid URL found in clipboard."
             return
         }
-        play(url: url)
+        play(url: url, playlistID: playlistID)
     }
 
     func play(
@@ -484,6 +484,7 @@ struct PlaylistRow: View {
 struct StreamInputBar: View {
     @Binding var urlText: String
     @ObservedObject var playerManager: PlayerManager
+    var playlistID: String? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -516,9 +517,9 @@ struct StreamInputBar: View {
 
     private func playEnteredURL() {
         if urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            playerManager.playFromClipboard()
+            playerManager.playFromClipboard(playlistID: playlistID)
         } else {
-            playerManager.play(urlString: urlText)
+            playerManager.play(urlString: urlText, playlistID: playlistID)
             urlText = ""
         }
     }
@@ -581,7 +582,7 @@ struct PlaylistDetailView: View {
                         .listStyle(.plain)
                     }
 
-                    StreamInputBar(urlText: $urlText, playerManager: playerManager)
+                    StreamInputBar(urlText: $urlText, playerManager: playerManager, playlistID: playlistID)
                 }
                 .navigationTitle(playlist.name)
                 .navigationBarTitleDisplayMode(.inline)
@@ -632,6 +633,14 @@ struct ContentView: View {
             }
             .navigationTitle("PLAYLISTS")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        playlists.createPlaylist()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create playlist")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("SETTINGS") { showingSettings = true }
                         .font(.system(size: 11, weight: .medium))
@@ -707,12 +716,15 @@ struct ContentView: View {
                 return
             }
 
-            if let existing = playlists.playlist(id: "history")?.items.first(where: { $0.url == stream.sourceURL.absoluteString }) {
+            let destinationPlaylistID = request.playlistID ?? "history"
+            if let existing = playlists.playlist(id: destinationPlaylistID)?.items.first(where: { $0.url == stream.sourceURL.absoluteString }) {
                 if let password = request.password, existing.password != password {
                     var updated = existing
                     updated.password = password
-                    playlists.update(updated, in: "history")
+                    playlists.update(updated, in: destinationPlaylistID)
                 }
+                nowPlayingPlaylistID = destinationPlaylistID
+                nowPlayingID = existing.id
                 return
             }
 
@@ -722,13 +734,15 @@ struct ContentView: View {
                 url: stream.sourceURL.absoluteString,
                 password: request.password
             )
-            playlists.addToHistory(item)
-            nowPlayingPlaylistID = "history"
+            playlists.add(item, to: destinationPlaylistID)
+            nowPlayingPlaylistID = destinationPlaylistID
             nowPlayingID = item.id
             if let thumbnailURL = stream.thumbnailURL {
-                Task { await playlists.saveThumbnail(from: thumbnailURL, for: item.id, in: "history") }
+                Task {
+                    await playlists.saveThumbnail(from: thumbnailURL, for: item.id, in: destinationPlaylistID)
+                }
             }
-            playerManager.generateThumbnail(for: item.id, in: "history", into: playlists)
+            playerManager.generateThumbnail(for: item.id, in: destinationPlaylistID, into: playlists)
         }
 
         playerManager.onWillDismiss = { seconds in

@@ -68,8 +68,27 @@ class PlaylistStore: ObservableObject {
         }
     }
 
+    func createPlaylist() {
+        try? FileManager.default.createDirectory(at: playlistsURL, withIntermediateDirectories: true)
+
+        var number = 1
+        var fileURL: URL
+        repeat {
+            let filename = String(format: "playlist_%03d.json", number)
+            fileURL = playlistsURL.appendingPathComponent(filename)
+            number += 1
+        } while FileManager.default.fileExists(atPath: fileURL.path)
+
+        try? Data("[]".utf8).write(to: fileURL, options: .atomic)
+        reload()
+    }
+
     func addToHistory(_ item: StreamItem) {
-        guard let index = playlists.firstIndex(where: \.isHistory),
+        add(item, to: "history")
+    }
+
+    func add(_ item: StreamItem, to playlistID: String) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlistID }),
               !playlists[index].items.contains(where: { $0.url == item.url })
         else { return }
         playlists[index].items.insert(item, at: 0)

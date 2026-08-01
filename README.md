@@ -9,6 +9,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 - Play Streamable page links directly
 - Play public, unlisted, and password-protected Vimeo links directly
 - Browse History and imported playlists
+- Create empty playlists from the app
 - (PiP) Picture in picture support
 - Background playback with media controls
 - Resume playback at last known timestamp
@@ -26,7 +27,10 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 ## Playlists
 - `history.json` is the built-in History playlist.
 - Copy playlist files to the app's `Documents/playlists/` folder through Files.
+- Use the `+` button to create sequential empty playlist files such as `playlist_001.json`.
 - A playlist name is derived from its filename: `anime-reactions.json` appears as `Anime Reactions`.
+- Rename or delete a playlist in the Files app by managing its `.json` file in the app's `playlists` folder.
+- Do not rename or delete `history.json`; it is managed by the app.
 - Each playlist file is a JSON array using the same full item format as `history.json`:
 
 ```json
@@ -46,6 +50,8 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 
 - `addedAt` is measured in seconds since January 1, 2001.
 - Editing or deleting a playlist item in the app rewrites that playlist JSON file.
+- URLs played from the home-screen input are saved to History after playback starts.
+- URLs played from inside a playlist are saved to that playlist's JSON file after playback starts.
 
 ## Known Issues
 - Sometimes clicking recent list items does nothing, holding 1-2 seconds works — you will see UI feedback that it's registering
