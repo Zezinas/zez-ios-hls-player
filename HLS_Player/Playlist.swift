@@ -124,8 +124,12 @@ class PlaylistStore: ObservableObject {
     }
 
     func saveThumbnail(_ image: UIImage, for itemID: UUID, in playlistID: String) {
-        let filename = "\(itemID.uuidString).jpg"
+        let filename = "images/\(itemID.uuidString).jpg"
         let fileURL = documentsURL.appendingPathComponent(filename)
+        try? FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         if let data = image.jpegData(compressionQuality: 0.7) {
             try? data.write(to: fileURL)
         }

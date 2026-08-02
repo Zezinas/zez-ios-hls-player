@@ -31,6 +31,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
 - A playlist name is derived from its filename: `anime-reactions.json` appears as `Anime Reactions`.
 - Rename or delete a playlist in the Files app by managing its `.json` file in the app's `playlists` folder.
 - Do not rename or delete `history.json`; it is managed by the app.
+- New thumbnails are stored in the app's `Documents/images/` folder.
 - Each playlist file is a JSON array using the same full item format as `history.json`:
 
 ```json
@@ -42,7 +43,7 @@ A minimal iOS HLS / URL stream player. Paste a URL, hit play.
     "url": "https://vimeo.com/123456",
     "password": "optional-password",
     "addedAt": 0,
-    "thumbnailFilename": null,
+    "thumbnailFilename": "images/A40E5B54-C4D6-4E41-A131-CCB5354D314C.jpg",
     "resumePosition": null
   }
 ]
